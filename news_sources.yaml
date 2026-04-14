@@ -1,0 +1,136 @@
+# 新闻自动收集配置文件
+# 路径: ~/.hermes/news_sources.yaml
+# 修改此文件即可增删信息源，无需改代码
+
+# ============================================================
+# 一、热点（TrendRadar SQLite，0 token）
+# ============================================================
+trends:
+  enabled: true
+  db_path: ~/TrendRadar/output/news  # 自动读取今日 .db 文件
+  platforms:
+    - weibo
+    - zhihu
+    - baidu
+    - toutiao
+    - wallstreetcn-hot
+  max_items: 15
+
+# ============================================================
+# 二、新闻
+# ============================================================
+news:
+  # 财新（cookie 鉴权，存于 ~/.hermes/.env CAIXIN_COOKIE）
+  - id: caixin
+    name: 财新
+    type: scrape
+    url: https://www.caixin.com
+    cookie_env: CAIXIN_COOKIE
+    max_items: 8
+
+  # 公众号（WeWe RSS 自建实例）
+  - id: szsmkzk
+    name: 数字生命卡兹克
+    type: rss
+    url: http://192.9.158.168:4000/feeds/MP_WXS_3223096120.atom
+    max_items: 3
+
+  - id: gududanao
+    name: 孤独大脑
+    type: rss
+    url: http://192.9.158.168:4000/feeds/MP_WXS_2398022876.atom
+    max_items: 3
+
+  - id: baoyuai
+    name: 宝玉AI
+    type: rss
+    url: http://192.9.158.168:4000/feeds/MP_WXS_3957812448.atom
+    max_items: 3
+
+# ============================================================
+# 三、论文 / AI 资讯
+# ============================================================
+papers:
+  - id: jiqizhixin
+    name: 机器之心
+    type: rss
+    url: http://192.9.158.168:4000/feeds/MP_WXS_3073282833.atom
+    max_items: 5
+
+  # 待补充
+  # - id: hf-cn
+  #   name: HF中文
+  #   type: rss
+  #   url:
+  # - id: aigcopen
+  #   name: AIGCopen
+  #   type: rss
+  #   url:
+
+# ============================================================
+# 四、Blog
+# ============================================================
+blogs:
+  - id: sam-altman
+    name: Sam Altman
+    type: rss
+    url: https://blog.samaltman.com/posts.atom
+    max_age_days: 30  # 更新慢，放宽时间
+
+  - id: lilian-weng
+    name: Lilian Weng
+    type: rss
+    url: https://lilianweng.github.io/index.xml
+    max_age_days: 30
+
+  - id: import-ai
+    name: Import AI
+    type: rss
+    url: https://importai.substack.com/feed
+    max_age_days: 7
+
+  - id: hidecloud-jike
+    name: hidecloud 即刻
+    type: jike
+    url: https://m.jellow.club/users/E04918BA-823C-4284-B2FA-7E00D0849023
+    max_age_days: 7
+
+  - id: dario
+    name: Dario Amodei
+    type: scrape
+    url: https://darioamodei.com
+    max_age_days: 30
+
+  # 待补充
+  # - id: the-batch
+  #   name: The Batch
+  #   type: rss
+  #   url:  # Kill The Newsletter 转换地址
+
+# ============================================================
+# 五、播客
+# ============================================================
+podcasts:
+  - id: 42zhangjing
+    name: 42章经
+    type: rss
+    url: https://feed.xyzfm.space/evgg6xle9rdc
+    max_age_days: 7
+
+  - id: sv101
+    name: 硅谷101
+    type: rss
+    url: http://www.ximalaya.com/album/33244571.xml
+    max_age_days: 7
+
+  - id: ai-lianjinshu
+    name: AI炼金术
+    type: rss
+    url: https://www.ximalaya.com/album/74194808.xml
+    max_age_days: 7
+
+  - id: 35huan
+    name: 三五环
+    type: rss
+    url: https://proxy.wavpub.com/35huan.xml
+    max_age_days: 7

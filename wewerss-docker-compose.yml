@@ -1,0 +1,10 @@
+services:
+  wewerss:
+    image: cooderl/wewe-rss-sqlite:latest
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      - AUTH_CODE=wewe2026
+    volumes:
+      - ./data:/app/data

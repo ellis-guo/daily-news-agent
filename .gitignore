@@ -1,0 +1,8 @@
+# 敏感信息 - 不提交到 git
+.env
+news_state.json
+news_last_digest.json
+*.db
+*.log
+__pycache__/
+*.pyc
