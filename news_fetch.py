@@ -76,6 +76,20 @@ def is_fresh(pub_date_str, max_age_hours=24):
 
 
 def fetch_url(url, headers=None, timeout=15, retries=2):
+    req = urllib.request.Request(url, headers=headers or {})
+    req.add_header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+    for attempt in range(retries + 1):
+        try:
+            resp = urllib.request.urlopen(req, timeout=timeout)
+            return resp.read().decode("utf-8", errors="ignore")
+        except Exception as e:
+            if attempt < retries:
+                import time
+                time.sleep(3)
+                print(f"  [WARN] fetch retry {attempt + 1}/{retries}: {url}", file=sys.stderr)
+            else:
+                print(f"  [WARN] fetch failed after {retries + 1} attempts: {url}: {e}", file=sys.stderr)
+    return None
 
 
 def cleanup_old_articles(keep_days=7):
@@ -103,22 +117,6 @@ def save_article(source_id, url, content, today):
     key = f"{source_id}_{url_hash}.txt"
     (day_dir / key).write_text(content, encoding="utf-8")
     return key
-
-
-    req = urllib.request.Request(url, headers=headers or {})
-    req.add_header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-    for attempt in range(retries + 1):
-        try:
-            resp = urllib.request.urlopen(req, timeout=timeout)
-            return resp.read().decode("utf-8", errors="ignore")
-        except Exception as e:
-            if attempt < retries:
-                import time
-                time.sleep(3)
-                print(f"  [WARN] fetch retry {attempt + 1}/{retries}: {url}", file=sys.stderr)
-            else:
-                print(f"  [WARN] fetch failed after {retries + 1} attempts: {url}: {e}", file=sys.stderr)
-    return None
 
 
 def fetch_summary_from_url(url, cookie=None, max_lines=10):
@@ -404,7 +402,13 @@ def main():
         elif src.get("type") == "scrape" and src.get("id") == "dario":
             items = fetch_dario(src.get("max_age_hours", 24 * 30))
         elif src.get("type") == "rss":
-            xml = fetch_url(src["url"])
+            urls = [src["url"]] + src.get("fallback_urls", [])
+            xml = None
+            for url in urls:
+                xml = fetch_url(url)
+                if xml:
+                    break
+                print(f"  [WARN] fallback to next url for {src['name']}", file=sys.stderr)
             max_age_hours = src.get("max_age_hours") or src.get("max_age_days", 7) * 24
             items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 10), max_age_hours, fetch_summary=src.get("fetch_summary", False))
         else:
