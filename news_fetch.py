@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -50,7 +51,7 @@ def save_state(state):
 def is_fresh(pub_date_str, max_age_hours=24):
     """判断文章是否在 max_age_hours 小时内（默认严格 24 小时）"""
     if not pub_date_str:
-        return True
+        return False  # 没有日期信息，拒绝通过
     try:
         # 优先用 email.utils 解析 RFC 2822（RSS 标准格式，如 GMT/+0000 结尾）
         from email.utils import parsedate_to_datetime
@@ -350,6 +351,7 @@ def main():
     # 全量返回，去重由 news_filter.py 统一处理
     seen_ids = set()
     results = {}
+    source_status = {}  # {源名: 抓到条数}
 
     # 一、热点
     print("Fetching trends...", file=sys.stderr)
@@ -366,31 +368,31 @@ def main():
         if src.get("type") == "scrape" and src.get("id") == "caixin":
             items = fetch_caixin()
         elif src.get("type") == "rss":
-            is_fulltext = src.get("fulltext", False)
-            feed_url = src["url"] + ("?type=fulltext" if is_fulltext else "")
-            xml = fetch_url(feed_url)
-            items = parse_rss(xml, feed_url, src["name"], src.get("max_items", 3), src.get("max_age_hours", 24),
-                              fetch_summary=src.get("fetch_summary", False),
-                              fulltext=is_fulltext, source_id=src.get("id"), today=today)
+            xml = fetch_url(src["url"])
+            items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 3), src.get("max_age_hours", 24),
+                              fetch_summary=src.get("fetch_summary", False))
         else:
             items = []
         new_items = [i for i in items if i["url"] not in seen_ids]
         news_items.extend(new_items)
+        source_status[src["name"]] = len(new_items)
         print(f"  {src['name']}: {len(new_items)} new items", file=sys.stderr)
+        if "163.192.58.250" in src.get("url", ""):
+            time.sleep(5)
     results["新闻"] = news_items
 
     # 三、论文
     paper_items = []
     print("Fetching papers...", file=sys.stderr)
     for src in config.get("papers", []):
-        is_fulltext = src.get("fulltext", False)
-        feed_url = src["url"] + ("?type=fulltext" if is_fulltext else "")
-        xml = fetch_url(feed_url)
-        items = parse_rss(xml, feed_url, src["name"], src.get("max_items", 5), src.get("max_age_hours", 24),
-                          fulltext=is_fulltext, source_id=src.get("id"), today=today)
+        xml = fetch_url(src["url"])
+        items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 5), src.get("max_age_hours", 24))
         new_items = [i for i in items if i["url"] not in seen_ids]
         paper_items.extend(new_items)
+        source_status[src["name"]] = len(new_items)
         print(f"  {src['name']}: {len(new_items)} new items", file=sys.stderr)
+        if "163.192.58.250" in src.get("url", ""):
+            time.sleep(5)
     results["论文"] = paper_items
 
     # 四、Blog（无更新时每个源加占位）
@@ -425,6 +427,7 @@ def main():
                 "source": src["name"],
                 "no_update": True,
             })
+        source_status[src["name"]] = len(new_items)
         print(f"  {src['name']}: {len(new_items)} new items", file=sys.stderr)
     results["Blog"] = blog_items
 
@@ -446,6 +449,7 @@ def main():
                 "source": src["name"],
                 "no_update": True,
             })
+        source_status[src["name"]] = len(new_items)
         print(f"  {src['name']}: {len(new_items)} new items", file=sys.stderr)
     results["播客"] = podcast_items
 
@@ -455,6 +459,7 @@ def main():
     cleanup_old_articles(keep_days=7)
 
     # 输出 JSON 供 Hermes 读取
+    results["_source_status"] = source_status
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

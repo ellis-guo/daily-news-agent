@@ -43,7 +43,7 @@ X. 【来源】标题
 选定后：
 1. 只对最终选定的 1-2 篇文章获取全文，不要对所有文章逐一抓取
 2. 获取全文方式：
-   - 微信公众号（rss 类型，mp.weixin.qq.com 链接）：用 browser_navigate 打开 URL，用 browser_snapshot 获取正文
+   - 微信公众号（rss 类型，MD 里有 📄 article_key 标记）：用 read_file 读取 `~/.hermes/articles/YYYY-MM-DD/{article_key}`，无需浏览器
    - 其他 rss 类型：用 web_extract 抓 URL
    - trend 类型：用 web_search 搜索标题找权威报道
 3. 用朋友口吻向 Ellis 介绍这篇文章的内容，可以结合网上其他声音让介绍更完整、更立体

@@ -41,19 +41,18 @@ SECTION_TITLES = {
 }
 
 def get_api_key():
-    """从 auth.json 读取 OAuth token（用作 x-api-key）"""
-    auth_file = HERMES_DIR / "auth.json"
-    if auth_file.exists():
+    """从 .env 读取 ANTHROPIC_TOKEN"""
+    env_file = HERMES_DIR / ".env"
+    if env_file.exists():
         try:
-            auth = json.loads(auth_file.read_text())
-            entries = auth.get("credential_pool", {}).get("anthropic", [])
-            if entries:
-                token = entries[0].get("access_token", "")
-                if token and token != "***":
-                    return token
+            for line in env_file.read_text().splitlines():
+                if line.startswith("ANTHROPIC_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    if token:
+                        return token
         except Exception as e:
-            print(f"[WARN] auth.json read failed: {e}", file=sys.stderr)
-    return os.environ.get("ANTHROPIC_API_KEY", "")
+            print(f"[WARN] .env read failed: {e}", file=sys.stderr)
+    return os.environ.get("ANTHROPIC_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
 
 def read_memory():
     if MEMORY_FILE.exists():
@@ -245,7 +244,7 @@ def step3_score_and_limit(items, memory):
 
     return final
 
-def write_md(final, today):
+def write_md(final, today, source_status=None):
     """将过滤结果写入 MD 文件，返回路径"""
     DIGESTS_DIR.mkdir(exist_ok=True)
     md_path = DIGESTS_DIR / f"{today}.md"
@@ -269,8 +268,19 @@ def write_md(final, today):
                 lines.append(summary[:300])
             if url:
                 lines.append(f"🔗 {url} ({source_type})")
+            if item.get("article_key"):
+                lines.append(f"📄 {item['article_key']}")
             lines.append("")
             n += 1
+
+    # 源状态汇报
+    if source_status:
+        empty_sources = [name for name, count in source_status.items() if count == 0]
+        if empty_sources:
+            lines.append("## ⚠️ 今日无内容的源\n")
+            for name in empty_sources:
+                lines.append(f"- {name}")
+            lines.append("")
 
     md_content = "\n".join(lines)
     md_path.write_text(md_content, encoding="utf-8")
@@ -305,6 +315,8 @@ def main():
     except Exception as e:
         print(f"[ERROR] fetch failed: {e}", file=sys.stderr)
         sys.exit(1)
+
+    source_status = raw_data.pop("_source_status", {})
 
     total_raw = sum(len(v) for v in raw_data.values())
     print(f"[Fetch] 原始: {total_raw} 条", file=sys.stderr)
@@ -352,8 +364,8 @@ def main():
     state["seen_ids"] = list(seen_ids | set(hot_news_urls) | set(shown_urls))
     save_state(state)
 
-    # 写 MD 文件
-    md_path = write_md(final, today)
+    # 写 MD 文件（附源状态）
+    md_path = write_md(final, today, source_status)
 
     # 写兼容 JSON
     write_index_json(final)

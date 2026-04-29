@@ -32,23 +32,23 @@ news:
   - id: szsmkzk
     name: 数字生命卡兹克
     type: rss
-    url: http://192.9.158.168:4000/feeds/MP_WXS_3223096120.atom
+    url: http://163.192.58.250:4000/feeds/MP_WXS_3223096120.atom
     max_items: 3
-    fulltext: true
+    max_age_hours: 72
 
   - id: gududanao
     name: 孤独大脑
     type: rss
-    url: http://192.9.158.168:4000/feeds/MP_WXS_2398022876.atom
+    url: http://163.192.58.250:4000/feeds/MP_WXS_2398022876.atom
     max_items: 3
-    fulltext: true
+    max_age_hours: 72
 
   - id: baoyuai
     name: 宝玉AI
     type: rss
-    url: http://192.9.158.168:4000/feeds/MP_WXS_3957812448.atom
+    url: http://163.192.58.250:4000/feeds/MP_WXS_3957812448.atom
     max_items: 3
-    fulltext: true
+    max_age_hours: 72
 
 # ============================================================
 # 三、论文 / AI 资讯
@@ -57,9 +57,9 @@ papers:
   - id: jiqizhixin
     name: 机器之心
     type: rss
-    url: http://192.9.158.168:4000/feeds/MP_WXS_3073282833.atom
+    url: http://163.192.58.250:4000/feeds/MP_WXS_3073282833.atom
     max_items: 5
-    fulltext: true
+    max_age_hours: 72
 
   # 待补充
   # - id: hf-cn
@@ -139,8 +139,8 @@ podcasts:
   - id: sv101
     name: 硅谷101
     type: rss
-    url: http://www.ximalaya.com/album/33244571.xml
-    max_age_days: 1
+    url: https://feeds.fireside.fm/sv101/rss
+    max_age_days: 7
 
   - id: ai-lianjinshu
     name: AI炼金术

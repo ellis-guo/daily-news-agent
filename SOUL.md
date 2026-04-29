@@ -23,20 +23,25 @@
 5. 末尾附原文链接
 
 获取全文方式（只对选定的文章操作，不要逐一抓取所有文章）：
-- 微信公众号（mp.weixin.qq.com 链接）：用 browser_navigate 打开 URL，再用 browser_snapshot 获取正文
+- 微信公众号（rss 类型，有 📄 article_key 标记）：用 read_file 读取 `~/.hermes/articles/YYYY-MM-DD/{article_key}` 即可获得全文，无需浏览器
 - 其他 rss 类型：用 web_extract 抓 URL
 - trend 类型：用 web_search 搜索标题找权威报道
 - jike：直接用 MD 文件里的摘要内容，无需抓网页
 - caixin：用 terminal 运行以下命令抓正文：
-  python3 -c "
-  import re, urllib.request
-  from pathlib import Path
-  env = (Path.home()/'.hermes/.env').read_text()
-  cookie = re.search(r'CAIXIN_COOKIE=\"([^\"]+)\"', env).group(1)
-  req = urllib.request.Request('ARTICLE_URL', headers={'Cookie': cookie, 'User-Agent': 'Mozilla/5.0'})
-  html = urllib.request.urlopen(req, timeout=15).read().decode('utf-8','ignore')
-  paras = re.findall(r'<p[^>]*>([^<]{20,})</p>', html)
-  print('\n'.join(paras[:20]))
+  /home/ubuntu/wechat-article-to-markdown/.venv/bin/python3 -c "
+  import asyncio, re
+  from playwright.async_api import async_playwright
+  async def fetch():
+      async with async_playwright() as p:
+          browser = await p.chromium.launch(headless=True, args=['--no-sandbox','--disable-gpu'])
+          page = await browser.new_page()
+          await page.goto('ARTICLE_URL', wait_until='domcontentloaded', timeout=15000)
+          await asyncio.sleep(3)
+          html = await page.content()
+          paras = re.findall(r'<p[^>]*>([^<]{20,})</p>', html)
+          print('\n'.join(paras[:20]))
+          await browser.close()
+  asyncio.run(fetch())
   "
 
 ## 今日 MD 文件
