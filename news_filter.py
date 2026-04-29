@@ -4,7 +4,7 @@
 Step 1: 抓取原始数据 (news_fetch.py)
 Step 2: Haiku 过滤广告/无关内容 (参考 MEMORY.md)
 Step 3: Haiku 兴趣打分，各板块取固定条数
-输出最终 JSON 供 cron job prompt 格式化
+输出当日 MD 文件路径
 """
 
 import json
@@ -13,12 +13,16 @@ import re
 import subprocess
 import sys
 import urllib.request
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 HERMES_DIR = Path.home() / ".hermes"
 MEMORY_FILE = HERMES_DIR / "MEMORY.md"
 FETCH_SCRIPT = HERMES_DIR / "scripts" / "news_fetch.py"
 STATE_FILE = HERMES_DIR / "news_state.json"
+DIGESTS_DIR = HERMES_DIR / "digests"
+
+CST = timezone(timedelta(hours=8))
 
 SECTION_LIMITS = {
     "热点": 10,
@@ -26,6 +30,14 @@ SECTION_LIMITS = {
     "论文": 5,
     "Blog": 999,
     "播客": 999,
+}
+
+SECTION_TITLES = {
+    "热点": "一、热点",
+    "新闻": "二、新闻",
+    "论文": "三、论文",
+    "Blog": "四、Blog",
+    "播客": "五、播客",
 }
 
 def get_api_key():
@@ -41,7 +53,6 @@ def get_api_key():
                     return token
         except Exception as e:
             print(f"[WARN] auth.json read failed: {e}", file=sys.stderr)
-    # fallback: env var
     return os.environ.get("ANTHROPIC_API_KEY", "")
 
 def read_memory():
@@ -66,8 +77,9 @@ def call_haiku(prompt, max_tokens=2000):
         "https://api.anthropic.com/v1/messages",
         data=payload,
         headers={
-            "x-api-key": api_key,
+            "Authorization": f"Bearer {api_key}",
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "oauth-2025-04-20",
             "content-type": "application/json",
         }
     )
@@ -105,7 +117,6 @@ def step1_filter(all_items, memory):
     if not all_items:
         return []
 
-    # 热点单独处理，不经过 Haiku 过滤
     trend_items = [i for i in all_items if i.get("section") == "热点"]
     other_items = [i for i in all_items if i.get("section") != "热点"]
 
@@ -223,7 +234,6 @@ def step3_score_and_limit(items, memory):
             if len(selected) >= limit:
                 break
 
-        # 补足不够的
         for i in range(len(section_items)):
             if i not in selected:
                 selected.append(i)
@@ -235,7 +245,58 @@ def step3_score_and_limit(items, memory):
 
     return final
 
+def write_md(final, today):
+    """将过滤结果写入 MD 文件，返回路径"""
+    DIGESTS_DIR.mkdir(exist_ok=True)
+    md_path = DIGESTS_DIR / f"{today}.md"
+
+    lines = [f"# {today} 新闻摘要\n"]
+    n = 1
+    for section in ["热点", "新闻", "论文", "Blog", "播客"]:
+        items = final.get(section, [])
+        if not items:
+            continue
+        lines.append(f"## {SECTION_TITLES[section]}\n")
+        for item in items:
+            title = item.get("title", "")
+            source = item.get("source", "")
+            summary = item.get("summary") or item.get("content", "")
+            url = item.get("url", "")
+            source_type = item.get("source_type", "rss")
+
+            lines.append(f"### {n}. 【{source}】{title}")
+            if summary and not item.get("no_update"):
+                lines.append(summary[:300])
+            if url:
+                lines.append(f"🔗 {url} ({source_type})")
+            lines.append("")
+            n += 1
+
+    md_content = "\n".join(lines)
+    md_path.write_text(md_content, encoding="utf-8")
+    return md_path
+
+def write_index_json(final):
+    """保留 news_last_digest.json 供兼容"""
+    index_map = {}
+    n = 1
+    for section in ["热点", "新闻", "论文", "Blog", "播客"]:
+        for item in final.get(section, []):
+            index_map[str(n)] = {
+                "title": item["title"],
+                "url": item.get("url", ""),
+                "source": item["source"],
+                "section": section,
+                "source_type": item.get("source_type", "rss"),
+                "content": item.get("content", ""),
+            }
+            n += 1
+    (HERMES_DIR / "news_last_digest.json").write_text(
+        json.dumps(index_map, ensure_ascii=False, indent=2)
+    )
+
 def main():
+    today = datetime.now(CST).strftime("%Y-%m-%d")
     memory = read_memory()
 
     print("[Fetch] 抓取原始数据...", file=sys.stderr)
@@ -249,14 +310,13 @@ def main():
     print(f"[Fetch] 原始: {total_raw} 条", file=sys.stderr)
 
     if total_raw == 0:
-        print(json.dumps({"message": "今日暂无新内容"}, ensure_ascii=False))
+        print("[WARN] 今日暂无新内容", file=sys.stderr)
         return
 
     # 去重
     state = load_state()
     seen_ids = set(state["seen_ids"])
 
-    # 扁平化，带板块标签
     all_items = []
     for section, items in raw_data.items():
         for item in items:
@@ -283,35 +343,24 @@ def main():
     final = step3_score_and_limit(scored_items, memory)
 
     # 更新 state
-    all_urls = [i["url"] for items in raw_data.values() for i in items if i.get("url")]
-    state["seen_ids"] = list(seen_ids | set(all_urls))
+    hot_news_urls = [
+        i["url"] for s in ["热点", "新闻", "论文"] for i in raw_data.get(s, []) if i.get("url")
+    ]
+    shown_urls = [
+        item["url"] for s in ["Blog", "播客"] for item in final.get(s, []) if item.get("url")
+    ]
+    state["seen_ids"] = list(seen_ids | set(hot_news_urls) | set(shown_urls))
     save_state(state)
 
-    # 保存编号映射
-    index_map = {}
-    n = 1
-    for section in ["热点", "新闻", "论文", "Blog", "播客"]:
-        for item in final.get(section, []):
-            index_map[str(n)] = {
-                "title": item["title"],
-                "url": item["url"],
-                "source": item["source"],
-                "section": section,
-                "source_type": item.get("source_type", "rss"),
-                "content": item.get("content", ""),  # 即刻完整正文
-            }
-            n += 1
-    (HERMES_DIR / "news_last_digest.json").write_text(
-        json.dumps(index_map, ensure_ascii=False, indent=2)
-    )
+    # 写 MD 文件
+    md_path = write_md(final, today)
 
-    # 按板块顺序输出
-    ordered = {s: final[s] for s in ["热点", "新闻", "论文", "Blog", "播客"]
-               if final.get(s)}
+    # 写兼容 JSON
+    write_index_json(final)
 
-    total_final = sum(len(v) for v in ordered.values())
-    print(f"[Done] 最终输出: {total_final} 条", file=sys.stderr)
-    print(json.dumps(ordered, ensure_ascii=False, indent=2))
+    total_final = sum(len(v) for v in final.values())
+    print(f"[Done] 最终输出: {total_final} 条，MD 已写入: {md_path}", file=sys.stderr)
+    print(str(md_path))
 
 if __name__ == "__main__":
     main()

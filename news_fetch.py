@@ -50,8 +50,16 @@ def is_fresh(pub_date_str, max_age_hours=24):
     if not pub_date_str:
         return True
     try:
-        for fmt in ["%a, %d %b %Y %H:%M:%S %z", "%Y-%m-%dT%H:%M:%S%z",
-                    "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"]:
+        # 优先用 email.utils 解析 RFC 2822（RSS 标准格式，如 GMT/+0000 结尾）
+        from email.utils import parsedate_to_datetime
+        try:
+            dt = parsedate_to_datetime(pub_date_str.strip())
+            age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+            return age_hours < max_age_hours
+        except:
+            pass
+        # fallback：ISO 8601 等其他格式
+        for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"]:
             try:
                 dt = datetime.strptime(pub_date_str.strip(), fmt)
                 if dt.tzinfo is None:
@@ -65,19 +73,43 @@ def is_fresh(pub_date_str, max_age_hours=24):
     return True
 
 
-def fetch_url(url, headers=None, timeout=15):
+def fetch_url(url, headers=None, timeout=15, retries=2):
     req = urllib.request.Request(url, headers=headers or {})
     req.add_header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+    for attempt in range(retries + 1):
+        try:
+            resp = urllib.request.urlopen(req, timeout=timeout)
+            return resp.read().decode("utf-8", errors="ignore")
+        except Exception as e:
+            if attempt < retries:
+                import time
+                time.sleep(3)
+                print(f"  [WARN] fetch retry {attempt + 1}/{retries}: {url}", file=sys.stderr)
+            else:
+                print(f"  [WARN] fetch failed after {retries + 1} attempts: {url}: {e}", file=sys.stderr)
+    return None
+
+
+def fetch_summary_from_url(url, cookie=None, max_lines=10):
+    """抓文章正文前 N 行作为摘要，失败返回空字符串"""
     try:
-        resp = urllib.request.urlopen(req, timeout=timeout)
-        return resp.read().decode("utf-8", errors="ignore")
+        headers = {}
+        if cookie:
+            headers["Cookie"] = cookie
+        html = fetch_url(url, headers=headers, timeout=15, retries=0)
+        if not html:
+            return ""
+        paras = re.findall(r'<p[^>]*>([^<]{20,})</p>', html)
+        lines = [re.sub(r'<[^>]+>', '', p).strip() for p in paras if p.strip()]
+        lines = [l for l in lines if len(l) > 20][:max_lines]
+        return " ".join(lines)
     except Exception as e:
-        print(f"  [WARN] fetch failed: {url}: {e}", file=sys.stderr)
-        return None
+        print(f"  [WARN] fetch_summary failed: {url}: {e}", file=sys.stderr)
+        return ""
 
 
-def parse_rss(xml_text, source_name, max_items=5, max_age_hours=24):
-    """解析 RSS/Atom，返回 [{title, url, date, source}]"""
+def parse_rss(xml_text, source_name, max_items=5, max_age_hours=24, fetch_summary=False, cookie=None):
+    """解析 RSS/Atom，返回 [{title, url, summary, date, source}]"""
     items = []
     if not xml_text:
         return items
@@ -91,11 +123,13 @@ def parse_rss(xml_text, source_name, max_items=5, max_age_hours=24):
                 title = (e.findtext("{http://www.w3.org/2005/Atom}title") or "").strip()
                 link_el = e.find("{http://www.w3.org/2005/Atom}link")
                 url = (link_el.get("href") if link_el is not None else "") or ""
-                # 用 published 判断时效，updated 可能是编辑更新不代表新文章
                 date = e.findtext("{http://www.w3.org/2005/Atom}published") or \
                        e.findtext("{http://www.w3.org/2005/Atom}updated") or ""
+                summary = (e.findtext("{http://www.w3.org/2005/Atom}summary") or "").strip()
+                if not summary and fetch_summary and url:
+                    summary = fetch_summary_from_url(url, cookie=cookie)
                 if title and url and is_fresh(date, max_age_hours):
-                    items.append({"title": title, "url": url, "date": date[:10], "source": source_name, "source_type": "rss"})
+                    items.append({"title": title, "url": url, "summary": summary, "date": date[:10], "source": source_name, "source_type": "rss"})
                 if len(items) >= max_items:
                     break
         else:
@@ -103,8 +137,12 @@ def parse_rss(xml_text, source_name, max_items=5, max_age_hours=24):
                 title = (item.findtext("title") or "").strip()
                 url = (item.findtext("link") or "").strip()
                 date = item.findtext("pubDate") or item.findtext("dc:date") or ""
+                summary = (item.findtext("description") or "").strip()
+                summary = re.sub(r'<[^>]+>', '', summary).strip()
+                if not summary and fetch_summary and url:
+                    summary = fetch_summary_from_url(url, cookie=cookie)
                 if title and url and is_fresh(date, max_age_hours):
-                    items.append({"title": title, "url": url, "date": date[:16], "source": source_name, "source_type": "rss"})
+                    items.append({"title": title, "url": url, "summary": summary, "date": date[:16], "source": source_name, "source_type": "rss"})
                 if len(items) >= max_items:
                     break
     except Exception as e:
@@ -160,7 +198,7 @@ def fetch_trends(config):
 
 
 def fetch_caixin():
-    """抓财新首页新闻列表"""
+    """抓财新首页新闻列表，只取标题和链接"""
     items = []
     env_text = (HERMES_DIR / ".env").read_text() if (HERMES_DIR / ".env").exists() else ""
     m = re.search(r'CAIXIN_COOKIE="([^"]+)"', env_text)
@@ -182,7 +220,7 @@ def fetch_caixin():
         title = title.strip()
         if title and title not in seen:
             seen.add(title)
-            items.append({"title": title, "url": url, "date": today, "source": "财新", "source_type": "caixin"})
+            items.append({"title": title, "url": url, "summary": "", "date": today, "source": "财新", "source_type": "caixin"})
         if len(items) >= 8:
             break
     return items
@@ -273,7 +311,7 @@ def main():
             items = fetch_caixin()
         elif src.get("type") == "rss":
             xml = fetch_url(src["url"])
-            items = parse_rss(xml, src["name"], src.get("max_items", 3), src.get("max_age_hours", 24))
+            items = parse_rss(xml, src["name"], src.get("max_items", 3), src.get("max_age_hours", 24), fetch_summary=src.get("fetch_summary", False))
         else:
             items = []
         new_items = [i for i in items if i["url"] not in seen_ids]
@@ -302,7 +340,8 @@ def main():
             items = fetch_dario(src.get("max_age_hours", 24 * 30))
         elif src.get("type") == "rss":
             xml = fetch_url(src["url"])
-            items = parse_rss(xml, src["name"], src.get("max_items", 10), src.get("max_age_hours", 24))
+            max_age_hours = src.get("max_age_hours") or src.get("max_age_days", 7) * 24
+            items = parse_rss(xml, src["name"], src.get("max_items", 10), max_age_hours, fetch_summary=src.get("fetch_summary", False))
         else:
             items = []
         new_items = [i for i in items if i["url"] not in seen_ids]
@@ -325,7 +364,8 @@ def main():
     print("Fetching podcasts...", file=sys.stderr)
     for src in config.get("podcasts", []):
         xml = fetch_url(src["url"])
-        items = parse_rss(xml, src["name"], src.get("max_items", 5), src.get("max_age_hours", 24))
+        max_age_hours = src.get("max_age_hours") or src.get("max_age_days", 7) * 24
+        items = parse_rss(xml, src["name"], src.get("max_items", 5), max_age_hours)
         new_items = [i for i in items if i["url"] not in seen_ids]
         if new_items:
             podcast_items.extend(new_items)
