@@ -13,11 +13,13 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
+import hashlib
 from pathlib import Path
 
 HERMES_DIR = Path.home() / ".hermes"
 SOURCES_FILE = HERMES_DIR / "news_sources.yaml"
 STATE_FILE = HERMES_DIR / "news_state.json"  # 记录已推送 ID，去重用
+ARTICLES_DIR = HERMES_DIR / "articles"
 
 # 北京时间
 CST = timezone(timedelta(hours=8))
@@ -74,6 +76,35 @@ def is_fresh(pub_date_str, max_age_hours=24):
 
 
 def fetch_url(url, headers=None, timeout=15, retries=2):
+
+
+def cleanup_old_articles(keep_days=7):
+    """删除超过 keep_days 天的 articles 子目录"""
+    if not ARTICLES_DIR.exists():
+        return
+    cutoff = datetime.now(CST) - timedelta(days=keep_days)
+    for d in ARTICLES_DIR.iterdir():
+        if d.is_dir():
+            try:
+                dir_date = datetime.strptime(d.name, "%Y-%m-%d").replace(tzinfo=CST)
+                if dir_date < cutoff:
+                    import shutil
+                    shutil.rmtree(d)
+                    print(f"  [Cleanup] 删除旧 articles 目录: {d.name}", file=sys.stderr)
+            except ValueError:
+                pass
+
+
+def save_article(source_id, url, content, today):
+    """保存文章全文到 articles/YYYY-MM-DD/，返回文件名（article_key）"""
+    day_dir = ARTICLES_DIR / today
+    day_dir.mkdir(parents=True, exist_ok=True)
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+    key = f"{source_id}_{url_hash}.txt"
+    (day_dir / key).write_text(content, encoding="utf-8")
+    return key
+
+
     req = urllib.request.Request(url, headers=headers or {})
     req.add_header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
     for attempt in range(retries + 1):
@@ -108,7 +139,7 @@ def fetch_summary_from_url(url, cookie=None, max_lines=10):
         return ""
 
 
-def parse_rss(xml_text, source_name, max_items=5, max_age_hours=24, fetch_summary=False, cookie=None):
+def parse_rss(xml_text, feed_url, source_name, max_items=5, max_age_hours=24, fetch_summary=False, cookie=None, fulltext=False, source_id=None, today=None):
     """解析 RSS/Atom，返回 [{title, url, summary, date, source}]"""
     items = []
     if not xml_text:
@@ -125,11 +156,37 @@ def parse_rss(xml_text, source_name, max_items=5, max_age_hours=24, fetch_summar
                 url = (link_el.get("href") if link_el is not None else "") or ""
                 date = e.findtext("{http://www.w3.org/2005/Atom}published") or \
                        e.findtext("{http://www.w3.org/2005/Atom}updated") or ""
-                summary = (e.findtext("{http://www.w3.org/2005/Atom}summary") or "").strip()
-                if not summary and fetch_summary and url:
-                    summary = fetch_summary_from_url(url, cookie=cookie)
+                article_key = None
+                if fulltext and source_id and today:
+                    # 从 fulltext feed 的 <content> 提取全文
+                    content_raw = (e.findtext("{http://www.w3.org/2005/Atom}content") or "").strip()
+                    if content_raw:
+                        # 去 HTML 标签，提取纯文本
+                        content_text = re.sub(r'<[^>]+>', ' ', content_raw)
+                        content_text = re.sub(r'&nbsp;', ' ', content_text)
+                        content_text = re.sub(r'&amp;', '&', content_text)
+                        content_text = re.sub(r'&lt;', '<', content_text)
+                        content_text = re.sub(r'&gt;', '>', content_text)
+                        content_text = re.sub(r'[ \t]+', ' ', content_text)
+                        lines = [l.strip() for l in content_text.split('\n') if l.strip()]
+                        lines = [l for l in lines if len(l) > 10]
+                        if lines and url:
+                            full_content = "\n".join(lines)
+                            article_key = save_article(source_id, url, full_content, today)
+                            summary = full_content[:200]
+                        else:
+                            summary = ""
+                    else:
+                        summary = ""
+                else:
+                    summary = (e.findtext("{http://www.w3.org/2005/Atom}summary") or "").strip()
+                    if not summary and fetch_summary and url:
+                        summary = fetch_summary_from_url(url, cookie=cookie)
+                item_dict = {"title": title, "url": url, "summary": summary, "date": date[:10], "source": source_name, "source_type": "rss"}
+                if article_key:
+                    item_dict["article_key"] = article_key
                 if title and url and is_fresh(date, max_age_hours):
-                    items.append({"title": title, "url": url, "summary": summary, "date": date[:10], "source": source_name, "source_type": "rss"})
+                    items.append(item_dict)
                 if len(items) >= max_items:
                     break
         else:
@@ -306,12 +363,17 @@ def main():
     # 二、新闻
     news_items = []
     print("Fetching news...", file=sys.stderr)
+    today = datetime.now(CST).strftime("%Y-%m-%d")
     for src in config.get("news", []):
         if src.get("type") == "scrape" and src.get("id") == "caixin":
             items = fetch_caixin()
         elif src.get("type") == "rss":
-            xml = fetch_url(src["url"])
-            items = parse_rss(xml, src["name"], src.get("max_items", 3), src.get("max_age_hours", 24), fetch_summary=src.get("fetch_summary", False))
+            is_fulltext = src.get("fulltext", False)
+            feed_url = src["url"] + ("?type=fulltext" if is_fulltext else "")
+            xml = fetch_url(feed_url)
+            items = parse_rss(xml, feed_url, src["name"], src.get("max_items", 3), src.get("max_age_hours", 24),
+                              fetch_summary=src.get("fetch_summary", False),
+                              fulltext=is_fulltext, source_id=src.get("id"), today=today)
         else:
             items = []
         new_items = [i for i in items if i["url"] not in seen_ids]
@@ -323,8 +385,11 @@ def main():
     paper_items = []
     print("Fetching papers...", file=sys.stderr)
     for src in config.get("papers", []):
-        xml = fetch_url(src["url"])
-        items = parse_rss(xml, src["name"], src.get("max_items", 5), src.get("max_age_hours", 24))
+        is_fulltext = src.get("fulltext", False)
+        feed_url = src["url"] + ("?type=fulltext" if is_fulltext else "")
+        xml = fetch_url(feed_url)
+        items = parse_rss(xml, feed_url, src["name"], src.get("max_items", 5), src.get("max_age_hours", 24),
+                          fulltext=is_fulltext, source_id=src.get("id"), today=today)
         new_items = [i for i in items if i["url"] not in seen_ids]
         paper_items.extend(new_items)
         print(f"  {src['name']}: {len(new_items)} new items", file=sys.stderr)
@@ -341,7 +406,7 @@ def main():
         elif src.get("type") == "rss":
             xml = fetch_url(src["url"])
             max_age_hours = src.get("max_age_hours") or src.get("max_age_days", 7) * 24
-            items = parse_rss(xml, src["name"], src.get("max_items", 10), max_age_hours, fetch_summary=src.get("fetch_summary", False))
+            items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 10), max_age_hours, fetch_summary=src.get("fetch_summary", False))
         else:
             items = []
         new_items = [i for i in items if i["url"] not in seen_ids]
@@ -365,7 +430,7 @@ def main():
     for src in config.get("podcasts", []):
         xml = fetch_url(src["url"])
         max_age_hours = src.get("max_age_hours") or src.get("max_age_days", 7) * 24
-        items = parse_rss(xml, src["name"], src.get("max_items", 5), max_age_hours)
+        items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 5), max_age_hours)
         new_items = [i for i in items if i["url"] not in seen_ids]
         if new_items:
             podcast_items.extend(new_items)
@@ -381,6 +446,9 @@ def main():
     results["播客"] = podcast_items
 
     # 注意：state 更新由 news_filter.py 统一管理，这里不写
+
+    # 清理旧 articles
+    cleanup_old_articles(keep_days=7)
 
     # 输出 JSON 供 Hermes 读取
     print(json.dumps(results, ensure_ascii=False, indent=2))
