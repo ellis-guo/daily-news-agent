@@ -119,7 +119,7 @@ def save_state(state):
 def fetch_raw_data():
     result = subprocess.run(
         [sys.executable, str(FETCH_SCRIPT)],
-        capture_output=True, text=True, timeout=120
+        capture_output=True, text=True, timeout=180
     )
     if result.stderr:
         print(result.stderr.strip(), file=sys.stderr)
@@ -142,23 +142,16 @@ def step1_filter(all_items, memory):
         for i, item in enumerate(other_items)
     )
 
-    filter_rules = ""
-    in_section = False
-    for line in memory.split("\n"):
-        if "不感兴趣" in line or "过滤掉" in line:
-            in_section = True
-        elif line.startswith("## ") and in_section:
-            in_section = False
-        if in_section:
-            filter_rules += line + "\n"
+    prompt = f"""你是新闻过滤助手。根据用户偏好，从标题列表中选出值得保留的编号。
 
-    prompt = f"""根据以下规则，从标题列表中选出需要【保留】的编号。
-
-过滤规则：
-{filter_rules}
+用户偏好档案：
+{memory}
 
 标题列表：
 {titles_text}
+
+任务：过滤掉明显不符合用户兴趣的内容（广告/娱乐八卦/体育/无实质内容的官方通稿等），保留其余所有条目。
+宁可多留，不要误删。
 
 只输出需要保留的编号，逗号分隔，例如：1,3,5,7
 不要任何解释。"""
