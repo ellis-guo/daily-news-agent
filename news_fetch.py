@@ -352,6 +352,7 @@ def main():
     seen_ids = set()
     results = {}
     source_status = {}  # {源名: 抓到条数}
+    fetch_errors = []   # 抓取失败的源名列表
 
     # 一、热点
     print("Fetching trends...", file=sys.stderr)
@@ -367,9 +368,15 @@ def main():
     for src in config.get("news", []):
         if src.get("type") == "scrape" and src.get("id") == "caixin":
             items = fetch_caixin()
+            if not items:
+                fetch_errors.append(src["name"])
         elif src.get("type") == "rss":
             xml = fetch_url(src["url"])
-            items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 3), src.get("max_age_hours", 24),
+            if xml is None:
+                fetch_errors.append(src["name"])
+                items = []
+            else:
+                items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 3), src.get("max_age_hours", 24),
                               fetch_summary=src.get("fetch_summary", False))
         else:
             items = []
@@ -386,7 +393,11 @@ def main():
     print("Fetching papers...", file=sys.stderr)
     for src in config.get("papers", []):
         xml = fetch_url(src["url"])
-        items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 5), src.get("max_age_hours", 24))
+        if xml is None:
+            fetch_errors.append(src["name"])
+            items = []
+        else:
+            items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 5), src.get("max_age_hours", 24))
         new_items = [i for i in items if i["url"] not in seen_ids]
         paper_items.extend(new_items)
         source_status[src["name"]] = len(new_items)
@@ -411,6 +422,8 @@ def main():
                 if xml:
                     break
                 print(f"  [WARN] fallback to next url for {src['name']}", file=sys.stderr)
+            if xml is None:
+                fetch_errors.append(src["name"])
             max_age_hours = src.get("max_age_hours") or src.get("max_age_days", 7) * 24
             items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 10), max_age_hours, fetch_summary=src.get("fetch_summary", False))
         else:
@@ -436,6 +449,8 @@ def main():
     print("Fetching podcasts...", file=sys.stderr)
     for src in config.get("podcasts", []):
         xml = fetch_url(src["url"])
+        if xml is None:
+            fetch_errors.append(src["name"])
         max_age_hours = src.get("max_age_hours") or src.get("max_age_days", 7) * 24
         items = parse_rss(xml, src["url"], src["name"], src.get("max_items", 5), max_age_hours)
         new_items = [i for i in items if i["url"] not in seen_ids]
@@ -460,6 +475,7 @@ def main():
 
     # 输出 JSON 供 Hermes 读取
     results["_source_status"] = source_status
+    results["_fetch_errors"] = fetch_errors
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -251,7 +251,7 @@ def step3_score_and_limit(items, memory):
 
     return final
 
-def write_md(final, today, source_status=None):
+def write_md(final, today, source_status=None, fetch_errors=None):
     """将过滤结果写入 MD 文件，返回路径"""
     DIGESTS_DIR.mkdir(exist_ok=True)
     md_path = DIGESTS_DIR / f"{today}.md"
@@ -282,7 +282,13 @@ def write_md(final, today, source_status=None):
 
     # 源状态汇报
     if source_status:
-        empty_sources = [name for name, count in source_status.items() if count == 0]
+        error_set = set(fetch_errors or [])
+        empty_sources = [name for name, count in source_status.items() if count == 0 and name not in error_set]
+        if fetch_errors:
+            lines.append("## ❌ 今日获取失败的源\n")
+            for name in fetch_errors:
+                lines.append(f"- {name}")
+            lines.append("")
         if empty_sources:
             lines.append("## ⚠️ 今日无内容的源\n")
             for name in empty_sources:
@@ -324,6 +330,7 @@ def main():
         sys.exit(1)
 
     source_status = raw_data.pop("_source_status", {})
+    fetch_errors = raw_data.pop("_fetch_errors", [])
 
     total_raw = sum(len(v) for v in raw_data.values())
     print(f"[Fetch] 原始: {total_raw} 条", file=sys.stderr)
@@ -372,7 +379,7 @@ def main():
     save_state(state)
 
     # 写 MD 文件（附源状态）
-    md_path = write_md(final, today, source_status)
+    md_path = write_md(final, today, source_status, fetch_errors)
 
     # 写兼容 JSON
     write_index_json(final)
