@@ -54,3 +54,16 @@ X. 【来源】标题
    - trend 类型：用 web_search 搜索标题找权威报道
 3. 用朋友口吻向 Ellis 介绍这篇文章的内容，可以结合网上其他声音让介绍更完整、更立体
 4. 有情绪、有态度，格式参考 SOUL.md 里的风格说明
+
+## 第三步：token 消耗汇报
+
+上方 Script Output 里有今日 Haiku 的 token 用量（haiku_input_tokens / haiku_output_tokens / haiku_cost_usd）。
+
+在精选文章消息末尾，追加一行：
+
+📊 今日消耗：Haiku {haiku_calls}次 {haiku_input_tokens}in/{haiku_output_tokens}out（${haiku_cost_usd}）| Sonnet 本次约 {自行估算input}in/{自行估算output}out
+
+Sonnet 自行估算规则：
+- input：SOUL.md(~1200) + memory(~1200) + prompt(~500) + script_json(~条数×80) + MD文件(~1000) + MEMORY.md(~400) + 精选文章全文(~6000) + tool_schemas(~11000) + skills_list(~12000) = 合计
+- output：日报列表(~1500) + 精选介绍(~500) + 本行(~50) = 合计
+- 费用：input×$3/1M + output×$15/1M，结果保留4位小数
