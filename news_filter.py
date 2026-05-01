@@ -85,6 +85,20 @@ def call_haiku(prompt, max_tokens=2000):
     try:
         resp = urllib.request.urlopen(req, timeout=30)
         result = json.loads(resp.read())
+        # 记录 token 用量
+        usage = result.get("usage", {})
+        if usage:
+            import datetime
+            log_entry = json.dumps({
+                "ts": datetime.datetime.utcnow().isoformat(),
+                "model": "claude-haiku-4-5",
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+            }, ensure_ascii=False)
+            token_log = Path.home() / ".hermes" / "token_usage.jsonl"
+            with open(token_log, "a") as f:
+                f.write(log_entry + "\n")
+            print(f"[Token] haiku in={usage.get('input_tokens',0)} out={usage.get('output_tokens',0)}", file=sys.stderr)
         return result["content"][0]["text"]
     except Exception as e:
         print(f"[WARN] Haiku call failed: {e}", file=sys.stderr)
