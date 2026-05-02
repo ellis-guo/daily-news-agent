@@ -62,7 +62,7 @@ def is_fresh(pub_date_str, max_age_hours=24):
         except:
             pass
         # fallback：ISO 8601 等其他格式
-        for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"]:
+        for fmt in ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"]:
             try:
                 dt = datetime.strptime(pub_date_str.strip(), fmt)
                 if dt.tzinfo is None:
