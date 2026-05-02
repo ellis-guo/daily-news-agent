@@ -73,7 +73,9 @@ def is_fresh(pub_date_str, max_age_hours=24):
                 continue
     except:
         pass
-    return True
+    # 所有格式解析失败 → 视为过期，拒绝通过（不应 silently 放行）
+    print(f"  [WARN] is_fresh: 无法解析日期 '{pub_date_str}'，视为过期", file=sys.stderr)
+    return False
 
 
 def fetch_url(url, headers=None, timeout=15, retries=2):
@@ -254,20 +256,22 @@ def fetch_trends(config):
 
 
 def fetch_caixin():
-    """抓财新首页新闻列表，只取标题和链接"""
-    items = []
+    """抓财新首页新闻列表，只取标题和链接。
+    返回 None 表示网络/鉴权失败，返回 [] 表示抓到页面但无匹配条目。
+    """
     env_text = (HERMES_DIR / ".env").read_text() if (HERMES_DIR / ".env").exists() else ""
     m = re.search(r'CAIXIN_COOKIE="([^"]+)"', env_text)
     if not m:
         print("  [WARN] CAIXIN_COOKIE not found", file=sys.stderr)
-        return items
+        return None
 
     cookie = m.group(1)
     html = fetch_url("https://www.caixin.com", headers={"Cookie": cookie})
     if not html:
-        return items
+        return None  # 网络失败
 
     today = datetime.now(CST).strftime("%Y-%m-%d")
+    items = []
     seen = set()
     for url, title in re.findall(
         r'href="(https://www\.caixin\.com/\d{4}-\d{2}-\d{2}/\d+\.html)"[^>]*>([^<]{8,80})',
@@ -279,21 +283,24 @@ def fetch_caixin():
             items.append({"title": title, "url": url, "summary": "", "date": today, "source": "财新", "source_type": "caixin"})
         if len(items) >= 8:
             break
-    return items
+    return items  # 可能为 []，但网络正常
 
 
 def fetch_jike(url, max_age_hours=24):
-    """抓即刻用户动态"""
+    """抓即刻用户动态。
+    返回 None 表示网络/解析失败，返回 [] 表示正常但无新内容。
+    """
     import json as json_mod
-    items = []
     html = fetch_url(url)
     if not html:
-        return items
+        return None  # 网络失败
 
     m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.DOTALL)
     if not m:
-        return items
+        print(f"  [WARN] Jike: 找不到 __NEXT_DATA__，页面结构可能已变: {url}", file=sys.stderr)
+        return None  # 页面结构失败，视为抓取错误
 
+    items = []
     try:
         data = json_mod.loads(m.group(1))
         posts = data["props"]["pageProps"].get("posts", [])
@@ -317,16 +324,20 @@ def fetch_jike(url, max_age_hours=24):
                 })
     except Exception as e:
         print(f"  [WARN] Jike parse failed: {e}", file=sys.stderr)
+        return None  # JSON 解析失败，视为抓取错误
     return items
 
 
-def fetch_dario(max_age_days=30):
-    """爬 darioamodei.com 文章列表"""
-    items = []
+def fetch_dario():
+    """爬 darioamodei.com 文章列表。
+    返回 None 表示网络失败，返回 [] 表示正常但无匹配内容。
+    注：无日期信息，由 news_filter.py 的 state 去重防止重复推送。
+    """
     html = fetch_url("https://darioamodei.com")
     if not html:
-        return items
+        return None  # 网络失败
 
+    items = []
     seen = set()
     for href, title in re.findall(r'href="(/essays/[^"]+)"[^>]*>\s*([^<]{10,120})', html):
         title = title.strip()
@@ -337,6 +348,7 @@ def fetch_dario(max_age_days=30):
                 "url": f"https://darioamodei.com{href}",
                 "date": "",
                 "source": "Dario Amodei",
+                "source_type": "scrape",
             })
     return items[:5]
 
@@ -368,8 +380,9 @@ def main():
     for src in config.get("news", []):
         if src.get("type") == "scrape" and src.get("id") == "caixin":
             items = fetch_caixin()
-            if not items:
+            if items is None:
                 fetch_errors.append(src["name"])
+                items = []
         elif src.get("type") == "rss":
             xml = fetch_url(src["url"])
             if xml is None:
@@ -411,9 +424,15 @@ def main():
     print("Fetching blogs...", file=sys.stderr)
     for src in config.get("blogs", []):
         if src.get("type") == "jike":
-            items = fetch_jike(src["url"], src.get("max_age_hours", 24))
+            items = fetch_jike(src["url"], src.get("max_age_hours") or src.get("max_age_days", 1) * 24)
+            if items is None:
+                fetch_errors.append(src["name"])
+                items = []
         elif src.get("type") == "scrape" and src.get("id") == "dario":
-            items = fetch_dario(src.get("max_age_hours", 24 * 30))
+            items = fetch_dario()
+            if items is None:
+                fetch_errors.append(src["name"])
+                items = []
         elif src.get("type") == "rss":
             urls = [src["url"]] + src.get("fallback_urls", [])
             xml = None
@@ -443,7 +462,6 @@ def main():
         source_status[src["name"]] = len(new_items)
         print(f"  {src['name']}: {len(new_items)} new items", file=sys.stderr)
     results["Blog"] = blog_items
-
     # 五、播客（无更新时每个源加占位）
     podcast_items = []
     print("Fetching podcasts...", file=sys.stderr)
