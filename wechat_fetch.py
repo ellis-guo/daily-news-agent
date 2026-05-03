@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Step 3: 微信公众号全文抓取
-- 读今日 digest MD，找出所有 mp.weixin.qq.com 的条目
+Step4: 微信公众号全文抓取（v4）
+- 读今日 digest MD，找出所有 综合新闻 板块里的公众号条目（mp.weixin.qq.com）
 - 用 lite.py 抓全文（纯文字，不下载图片）
 - 存到 ~/.hermes/articles/YYYY-MM-DD/{article_key}.md
-- 把前 200 字回填到 digest MD 对应条目摘要
-- 在条目里追加 📄 {article_key} 标记
+- 把前 200 字回填到 digest MD 对应条目（摘要在 🔗 之前，📄 在 🔗 之后）
 """
 
 import asyncio
@@ -26,7 +25,6 @@ if sys.executable != str(VENV_PYTHON) and VENV_PYTHON.exists():
 
 # 引入 lite.py
 sys.path.insert(0, str(WECHAT_DIR))
-from lite import fetch, normalize_wechat_url, build_markdown
 
 CST = timezone(timedelta(hours=8))
 HERMES_DIR = Path.home() / ".hermes"
@@ -35,27 +33,33 @@ ARTICLES_DIR = HERMES_DIR / "articles"
 
 
 def get_article_key(url: str) -> str:
-    """用 URL 生成稳定的 8 位 hash key"""
     return hashlib.md5(url.encode()).hexdigest()[:8]
 
 
 def find_wechat_articles(md_path: Path) -> list[dict]:
-    """从 MD 文件里找出所有公众号条目"""
+    """从 MD 文件里找出综合新闻板块里的公众号条目（未处理过的）"""
     articles = []
     content = md_path.read_text(encoding="utf-8")
     lines = content.splitlines()
 
+    in_news_block = False
     i = 0
     while i < len(lines):
         line = lines[i]
-        # 找到章节标题行
-        if line.startswith("### ") and "【" in line:
-            # 往下找 🔗 行
-            for j in range(i + 1, min(i + 5, len(lines))):
-                m = re.match(r"🔗 (https://mp\.weixin\.qq\.com/\S+) \(rss\)", lines[j])
+
+        # 板块切换检测
+        if line.startswith("## "):
+            in_news_block = "三、综合新闻" in line
+            i += 1
+            continue
+
+        # 只处理综合新闻板块里的条目
+        if in_news_block and line.startswith("### ") and "【" in line:
+            for j in range(i + 1, min(i + 6, len(lines))):
+                # v4 格式：🔗 URL (news)
+                m = re.match(r"🔗 (https://mp\.weixin\.qq\.com/\S+) \(news\)", lines[j])
                 if m:
                     url = m.group(1)
-                    # 检查是否已有 📄 标记（已处理过）
                     already_done = any(
                         lines[k].startswith("📄 ")
                         for k in range(j + 1, min(j + 3, len(lines)))
@@ -76,12 +80,11 @@ def find_wechat_articles(md_path: Path) -> list[dict]:
 async def fetch_article_text(url: str, output_dir: Path) -> str | None:
     """抓取文章，返回纯文字 MD 内容（跳过图片下载）"""
     import httpx
-    import markdownify
-    from bs4 import BeautifulSoup
     from lite import (
         extract_content_html, extract_metadata,
         process_content, convert_to_markdown, build_markdown, UA
     )
+    from bs4 import BeautifulSoup
 
     try:
         async with httpx.AsyncClient(
@@ -106,7 +109,6 @@ async def fetch_article_text(url: str, output_dir: Path) -> str | None:
 
         body_html, code_blocks, _ = process_content(content_html)
         md = convert_to_markdown(body_html, code_blocks)
-        # 不下载图片，直接去掉图片链接
         md = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", md)
 
         final = build_markdown(meta, md)
@@ -124,32 +126,41 @@ def extract_preview(md_content: str, chars: int = 200) -> str:
     text_lines = []
     in_header = True
     for line in lines:
-        if in_header and (line.startswith("#") or line.startswith(">") or line == "---" or line.strip() == ""):
+        if in_header and (line.startswith("#") or line.startswith(">") or
+                          line == "---" or line.strip() == ""):
             continue
         in_header = False
         stripped = line.strip()
         if stripped:
             text_lines.append(stripped)
 
-    full_text = " ".join(text_lines)
-    return full_text[:chars]
+    return " ".join(text_lines)[:chars]
 
 
 def backfill_md(md_path: Path, article: dict, preview: str, article_key: str):
-    """把摘要和 📄 标记回填到 digest MD"""
+    """
+    把摘要和 📄 标记回填到 digest MD。
+    v4 格式：摘要插在 🔗 行之前，📄 插在 🔗 行之后。
+    """
     content = md_path.read_text(encoding="utf-8")
     lines = content.splitlines()
 
     url_idx = article["url_line_idx"]
-    url_line = lines[url_idx]
 
-    # 在 🔗 行后面插入摘要和 📄 标记
-    insert = []
+    inserts_before = []
+    inserts_after = []
+
     if preview:
-        insert.append(preview)
-    insert.append(f"📄 {article_key}")
+        inserts_before.append(preview)
+    inserts_after.append(f"📄 {article_key}")
 
-    lines = lines[:url_idx + 1] + insert + lines[url_idx + 1:]
+    lines = (
+        lines[:url_idx] +
+        inserts_before +
+        [lines[url_idx]] +
+        inserts_after +
+        lines[url_idx + 1:]
+    )
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -163,16 +174,14 @@ async def main():
 
     articles = find_wechat_articles(md_path)
     if not articles:
-        print(f"[Done] 今日无公众号文章需要处理", file=sys.stderr)
+        print("[Done] 今日无公众号文章需要处理", file=sys.stderr)
         return
 
-    print(f"[Step 3] 发现 {len(articles)} 篇公众号文章", file=sys.stderr)
+    print(f"[Step4] 发现 {len(articles)} 篇公众号文章", file=sys.stderr)
     article_dir = ARTICLES_DIR / today
     article_dir.mkdir(parents=True, exist_ok=True)
 
-    # 逐篇处理（避免微信反爬，不并发）
     success = 0
-    # 每次处理后重新 find（因为 backfill 会改变行号）
     for idx, article in enumerate(articles):
         url = article["url"]
         key = article["article_key"]
@@ -202,7 +211,6 @@ async def main():
         else:
             print(f"  [WARN] 回填失败，找不到对应条目: {url}", file=sys.stderr)
 
-        # 简单间隔，避免被微信限流
         if idx < len(articles) - 1:
             await asyncio.sleep(2)
 

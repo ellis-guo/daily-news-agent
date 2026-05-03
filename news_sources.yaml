@@ -1,155 +1,54 @@
-# 新闻自动收集配置文件
+# news_sources.yaml — v4
 # 路径: ~/.hermes/news_sources.yaml
-# 修改此文件即可增删信息源，无需改代码
 
 # ============================================================
 # 一、热点（TrendRadar SQLite，0 token）
 # ============================================================
 trends:
   enabled: true
-  db_path: ~/TrendRadar/output/news  # 自动读取今日 .db 文件
+  db_path: ~/TrendRadar/output/news
   platforms:
     - weibo
     - zhihu
     - baidu
     - toutiao
     - wallstreetcn-hot
-  max_items: 15
 
 # ============================================================
-# 二、新闻
+# 三、综合新闻（WeWeRSS Atom，每源最多5条，近3天）
 # ============================================================
-news:
-  # 财新（cookie 鉴权，存于 ~/.hermes/.env CAIXIN_COOKIE）
-  - id: caixin
-    name: 财新
-    type: scrape
-    url: https://www.caixin.com
-    cookie_env: CAIXIN_COOKIE
-    max_items: 8
-
-  # 公众号（WeWe RSS 自建实例）
-  - id: szsmkzk
-    name: 数字生命卡兹克
-    type: rss
-    url: http://163.192.58.250:4000/feeds/MP_WXS_3223096120.atom
-    max_items: 3
+wewerss:
+  - id: 36kr
+    name: 36氪
+    url: http://163.192.58.250:4000/feeds/MP_WXS_3264997043.atom
     max_age_hours: 72
 
-  - id: gududanao
-    name: 孤独大脑
-    type: rss
-    url: http://163.192.58.250:4000/feeds/MP_WXS_2398022876.atom
-    max_items: 3
+  - id: jiqizhixin
+    name: 机器之心
+    url: http://163.192.58.250:4000/feeds/MP_WXS_3073282833.atom
+    max_age_hours: 72
+
+  - id: xinzhiyuan
+    name: 新智元
+    url: http://163.192.58.250:4000/feeds/MP_WXS_3271041950.atom
     max_age_hours: 72
 
   - id: baoyuai
     name: 宝玉AI
-    type: rss
     url: http://163.192.58.250:4000/feeds/MP_WXS_3957812448.atom
-    max_items: 3
     max_age_hours: 72
 
-# ============================================================
-# 三、论文 / AI 资讯
-# ============================================================
-papers:
-  - id: jiqizhixin
-    name: 机器之心
-    type: rss
-    url: http://163.192.58.250:4000/feeds/MP_WXS_3073282833.atom
-    max_items: 5
+  - id: szsmkzk
+    name: 数字生命卡兹克
+    url: http://163.192.58.250:4000/feeds/MP_WXS_3223096120.atom
     max_age_hours: 72
 
-  # 待补充
-  # - id: hf-cn
-  #   name: HF中文
-  #   type: rss
-  #   url:
-  # - id: aigcopen
-  #   name: AIGCopen
-  #   type: rss
-  #   url:
+  - id: renrendoushi
+    name: 人人都是产品经理
+    url: http://163.192.58.250:4000/feeds/MP_WXS_2399106260.atom
+    max_age_hours: 72
 
-# ============================================================
-# 四、Blog
-# ============================================================
-blogs:
-  - id: sam-altman
-    name: Sam Altman
-    type: rss
-    url: https://blog.samaltman.com/posts.atom
-    max_age_days: 1
-
-  - id: lilian-weng
-    name: Lilian Weng
-    type: rss
-    url: https://lilianweng.github.io/index.xml
-    max_age_days: 1
-
-  - id: import-ai
-    name: Import AI
-    type: rss
-    url: https://importai.substack.com/feed
-    max_age_days: 1
-
-  - id: hidecloud-jike
-    name: hidecloud 即刻
-    type: jike
-    url: https://m.jellow.club/users/E04918BA-823C-4284-B2FA-7E00D0849023
-    max_age_days: 1
-
-  - id: dario
-    name: Dario Amodei
-    type: scrape
-    url: https://darioamodei.com
-    max_age_days: 1
-
-  - id: anthropic-engineering
-    name: Anthropic Engineering
-    type: rss
-    url: https://rsshub.rssforever.com/anthropic/engineering
-    fallback_urls:
-      - https://rsshub.pseudoyu.com/anthropic/engineering
-      - https://rsshub.app/anthropic/engineering
-    max_age_days: 1
-
-  - id: openai-news
-    name: OpenAI News
-    type: rss
-    url: https://openai.com/news/rss.xml
-    max_age_days: 1
-
-  # 待补充
-  # - id: the-batch
-  #   name: The Batch
-  #   type: rss
-  #   url:  # Kill The Newsletter 转换地址
-
-# ============================================================
-# 五、播客
-# ============================================================
-podcasts:
-  - id: 42zhangjing
-    name: 42章经
-    type: rss
-    url: https://feed.xyzfm.space/evgg6xle9rdc
-    max_age_days: 1
-
-  - id: sv101
-    name: 硅谷101
-    type: rss
-    url: https://feeds.fireside.fm/sv101/rss
-    max_age_days: 7
-
-  - id: ai-lianjinshu
-    name: AI炼金术
-    type: rss
-    url: https://www.ximalaya.com/album/74194808.xml
-    max_age_days: 1
-
-  - id: 35huan
-    name: 三五环
-    type: rss
-    url: https://proxy.wavpub.com/35huan.xml
-    max_age_days: 1
+  - id: gududanao
+    name: 孤独大脑
+    url: http://163.192.58.250:4000/feeds/MP_WXS_2398022876.atom
+    max_age_hours: 72

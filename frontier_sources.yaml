@@ -1,0 +1,28 @@
+# frontier_sources.yaml
+# 大厂前沿板块：读取本地 /home/ubuntu/rss-feeds/feeds/feed_{feed_file}.xml
+# 近3天文章，全量保留
+
+sources:
+  - name: Anthropic Engineering
+    feed_file: feed_anthropic_engineering.xml
+
+  - name: Anthropic News
+    feed_file: feed_anthropic_news.xml
+
+  - name: Anthropic Red
+    feed_file: feed_anthropic_red.xml
+
+  - name: Anthropic Research
+    feed_file: feed_anthropic_research.xml
+
+  - name: Claude Blog
+    feed_file: feed_claude.xml
+
+  - name: DeepMind Blog
+    feed_file: feed_deepmind_blog.xml
+
+  - name: Google AI
+    feed_file: feed_google_ai.xml
+
+  - name: OpenAI News
+    feed_file: feed_openai_news.xml
