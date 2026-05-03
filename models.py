@@ -1,7 +1,7 @@
 """
 Article dataclass — 统一数据模型
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 

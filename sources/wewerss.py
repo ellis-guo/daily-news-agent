@@ -92,15 +92,16 @@ def _parse_atom(xml_text: str, source_name: str) -> list[dict]:
     return items
 
 
-def fetch() -> list:
-    """拉取所有 wewerss 公众号源，返回 Article 列表"""
+def fetch() -> tuple[list, list]:
+    """拉取所有 wewerss 公众号源，返回 (Article 列表, 失败源名列表)"""
     try:
         sources = _load_sources()
     except Exception as e:
         print(f"[wewerss] 读取源配置失败: {e}", file=sys.stderr)
-        return []
+        return [], []
 
     articles = []
+    failed_sources = []
     for src in sources:
         name = src.get("name", "")
         url = src.get("url", "")
@@ -109,6 +110,9 @@ def fetch() -> list:
         xml = _fetch_url(url)
         if xml is None:
             print(f"[wewerss] {name}: 获取失败", file=sys.stderr)
+            failed_sources.append(name)
+            # WeWeRSS 限流保护（失败也要等，避免快速重试）
+            time.sleep(5)
             continue
 
         raw_items = _parse_atom(xml, name)
@@ -133,4 +137,4 @@ def fetch() -> list:
         # WeWeRSS 限流保护
         time.sleep(5)
 
-    return articles
+    return articles, failed_sources

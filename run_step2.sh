@@ -11,6 +11,11 @@ LOG_FILE="$HOME/.hermes/logs/pipeline.log"
 
 mkdir -p "$HOME/.hermes/logs"
 
+# 日志轮转：超过 500KB 时截断保留最后 200 行
+if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE")" -gt 512000 ]; then
+    tail -200 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+fi
+
 # 清除旧错误标记
 rm -f "$ERROR_FILE"
 

@@ -65,9 +65,11 @@ def run():
     # ── 3. 综合新闻 ───────────────────────────────────────
     print("[pipeline] Step3: 抓取综合新闻...", file=sys.stderr)
     try:
-        news_articles_raw = wewerss.fetch()
+        news_articles_raw, wewerss_failed = wewerss.fetch()
         news_articles = [a for a in news_articles_raw if not state.is_seen(a.url)]
-        modules["wewerss"] = {"status": "ok", "count": len(news_articles), "error": None}
+        error_msg = f"以下源获取失败: {', '.join(wewerss_failed)}" if wewerss_failed else None
+        modules["wewerss"] = {"status": "ok" if not wewerss_failed else "partial",
+                              "count": len(news_articles), "error": error_msg}
     except Exception as e:
         print(f"[pipeline] wewerss 异常: {e}", file=sys.stderr)
         news_articles = []

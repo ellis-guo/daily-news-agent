@@ -37,6 +37,8 @@ class StateManager:
 
     def save(self):
         trimmed = self._ordered[-MAX_SEEN:]
-        STATE_FILE.write_text(
-            json.dumps({"seen_ids": trimmed}, ensure_ascii=False, indent=2)
-        )
+        content = json.dumps({"seen_ids": trimmed}, ensure_ascii=False, indent=2)
+        # 原子写入：先写临时文件，再 rename，防止中途 kill 损坏 state
+        tmp = STATE_FILE.with_suffix(".json.tmp")
+        tmp.write_text(content)
+        tmp.replace(STATE_FILE)
