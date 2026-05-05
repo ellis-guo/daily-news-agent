@@ -49,7 +49,7 @@ def find_wechat_articles(md_path: Path) -> list[dict]:
 
         # 板块切换检测
         if line.startswith("## "):
-            in_news_block = "三、综合新闻" in line
+            in_news_block = "二、综合新闻" in line
             i += 1
             continue
 

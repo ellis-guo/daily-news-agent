@@ -7,11 +7,11 @@ from pathlib import Path
 
 SECTION_TITLES = {
     "trend":    "一、热点",
-    "frontier": "二、大厂前沿",
-    "news":     "三、综合新闻",
+    "news":     "二、综合新闻",
+    "frontier": "三、大厂前沿",
 }
 
-BLOCK_ORDER = ["trend", "frontier", "news"]
+BLOCK_ORDER = ["trend", "news", "frontier"]
 
 
 def write(sections: dict, path: Path, status: dict = None):
@@ -23,7 +23,8 @@ def write(sections: dict, path: Path, status: dict = None):
     today = path.stem  # YYYY-MM-DD
 
     lines = [f"# {today} 新闻摘要\n"]
-    n = 1  # 全局编号
+    n = 1       # 数字编号（trend + news）
+    f_idx = 0   # frontier 字母编号索引
 
     for block in BLOCK_ORDER:
         articles = sections.get(block, [])
@@ -32,17 +33,21 @@ def write(sections: dict, path: Path, status: dict = None):
 
         lines.append(f"## {SECTION_TITLES[block]}\n")
         for article in articles:
-            lines.append(f"### {n}. 【{article.source}】{article.title}")
+            if block == "frontier":
+                label = chr(ord('A') + f_idx)
+                lines.append(f"### {label}. 【{article.source}】{article.title}")
+                f_idx += 1
+            else:
+                lines.append(f"### {n}. 【{article.source}】{article.title}")
+                n += 1
             if article.summary:
                 lines.append(article.summary[:300])
             if article.url:
                 lines.append(f"🔗 {article.url} ({block})")
             if article.full_content_path:
-                # 只存 8 位 key，不存完整路径
                 key = Path(article.full_content_path).stem
                 lines.append(f"📄 {key}")
             lines.append("")
-            n += 1
 
     # 模块异常 / 无内容板块
     if status:
@@ -65,35 +70,38 @@ def write(sections: dict, path: Path, status: dict = None):
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def read_by_index(path: Path, n: int) -> dict | None:
+def read_by_index(path: Path, n) -> dict | None:
     """
-    从 MD 文件里按全局编号取出对应条目信息。
-    返回 {"title", "url", "source", "block", "article_key"} 或 None。
+    从 MD 文件里按编号取出对应条目信息。
+    n 可以是数字（trend/news）或字母字符串如 'A'（frontier）。
+    返回 {title, url, source, block, article_key} 或 None。
     """
     if not path.exists():
         return None
 
+    import re
     content = path.read_text(encoding="utf-8")
     lines = content.splitlines()
 
     current_block = None
     for i, line in enumerate(lines):
-        # 检测当前板块
         for block, title in SECTION_TITLES.items():
             if f"## {title}" in line:
                 current_block = block
                 break
 
-        # 找到目标编号的标题行
-        import re
-        m = re.match(rf"^### {n}\. 【([^】]+)】(.+)$", line)
+        # 字母编号（frontier）
+        if isinstance(n, str) and n.isalpha():
+            m = re.match(rf"^### {n.upper()}\. 【([^】]+)】(.+)$", line)
+        else:
+            m = re.match(rf"^### {n}\. 【([^】]+)】(.+)$", line)
+
         if m:
             source = m.group(1)
             title_text = m.group(2)
             url = ""
             article_key = ""
 
-            # 往下找 🔗 和 📄
             for j in range(i + 1, min(i + 6, len(lines))):
                 url_m = re.match(r"🔗 (\S+) \((\w+)\)", lines[j])
                 if url_m:

@@ -14,7 +14,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from state import StateManager
 from renderers.markdown import write as write_md
-from sources import trends, wewerss, frontier
+from sources import trends, wechatrss, frontier
 
 CST = timezone(timedelta(hours=8))
 HERMES_DIR = Path.home() / ".hermes"
@@ -65,15 +65,15 @@ def run():
     # ── 3. 综合新闻 ───────────────────────────────────────
     print("[pipeline] Step3: 抓取综合新闻...", file=sys.stderr)
     try:
-        news_articles_raw, wewerss_failed = wewerss.fetch()
+        news_articles_raw, wechatrss_failed = wechatrss.fetch()
         news_articles = [a for a in news_articles_raw if not state.is_seen(a.url)]
-        error_msg = f"以下源获取失败: {', '.join(wewerss_failed)}" if wewerss_failed else None
-        modules["wewerss"] = {"status": "ok" if not wewerss_failed else "partial",
+        error_msg = f"以下源获取失败: {', '.join(wechatrss_failed)}" if wechatrss_failed else None
+        modules["wechatrss"] = {"status": "ok" if not wechatrss_failed else "partial",
                               "count": len(news_articles), "error": error_msg}
     except Exception as e:
-        print(f"[pipeline] wewerss 异常: {e}", file=sys.stderr)
+        print(f"[pipeline] wechatrss 异常: {e}", file=sys.stderr)
         news_articles = []
-        modules["wewerss"] = {"status": "error", "count": 0, "error": str(e)}
+        modules["wechatrss"] = {"status": "error", "count": 0, "error": str(e)}
 
     total = len(trend_articles) + len(frontier_articles) + len(news_articles)
     print(f"[pipeline] 合计: 热点 {len(trend_articles)} + 前沿 {len(frontier_articles)} + 新闻 {len(news_articles)} = {total} 条", file=sys.stderr)

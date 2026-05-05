@@ -78,6 +78,24 @@ result = {
     "total_cost_usd": round(total_cost, 4),
 }
 
+# ── pipeline 异常检测 ─────────────────────────────────────────
+pipeline_errors = ""
+status_file = Path.home() / ".hermes" / "pipeline_status.json"
+if status_file.exists():
+    try:
+        status = json.loads(status_file.read_text())
+        error_parts = []
+        for mod, info in status.get("modules", {}).items():
+            if info.get("status") != "ok" or info.get("error"):
+                err = info.get("error") or "status=" + info.get("status", "?")
+                error_parts.append(f"{mod}: {err}")
+        if error_parts:
+            pipeline_errors = "⚠️ 异常：" + " | ".join(error_parts)
+    except Exception:
+        pass
+
+result["pipeline_errors"] = pipeline_errors
+
 # 写到 daily_token_report.json 供汇报 cron 读取
 report_file = Path.home() / ".hermes" / "daily_token_report.json"
 report_file.write_text(json.dumps(result, ensure_ascii=False, indent=2))
